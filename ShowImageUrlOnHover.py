@@ -4,6 +4,7 @@ import urllib.parse
 import urllib.request
 import os
 import tempfile
+import threading
 
 def dequote(s):
     if (s[0] == s[-1]) and s.startswith(("'", '"')):
@@ -16,34 +17,38 @@ class ShowImageUrlOnHover(sublime_plugin.ViewEventListener):
         if hover_zone != sublime.HOVER_TEXT:
             return
         region = self.view.extract_scope(point)
-        url = self.view.substr(region)
-        url = dequote(url)
-        parsed_url = urllib.parse.urlparse(url)
-        root, ext = os.path.splitext(url)
-        ext = ext.lower()
-        if ext not in ('.gif', '.png', '.jpg', '.jpeg'):
+        self.url = self.view.substr(region)
+        self.url = dequote(self.url)
+        root, ext = os.path.splitext(self.url)
+        self.ext = ext.lower()
+        if self.ext not in ('.gif', '.png', '.jpg', '.jpeg'):
             return
+        self.point = point
+        threading.Thread(target=self.download_image).start()
+
+    def download_image(self):
+        parsed_url = urllib.parse.urlparse(self.url)
         # For some reason, png files from the web are not displayed.
-        if parsed_url.scheme == 'https' or ext == '.png':
-            temppath = os.path.join(tempfile.mkdtemp(), os.path.basename(url))
+        # gifs also give problems.
+        if parsed_url.scheme == 'https' or self.ext == '.png' or self.ext == '.gif':
+            self.temppath = os.path.join(tempfile.mkdtemp(), os.path.basename(self.url))
             try:
-                temppath, headers = urllib.request.urlretrieve(url, temppath)
+                self.temppath, headers = urllib.request.urlretrieve(self.url, self.temppath)
             except Exception as e:
                 print(str(e))
                 return
-            self.temppath = temppath
-            self.show_popup('file://' + temppath, point)
+            self.show_popup('file://' + self.temppath)
         elif parsed_url.scheme in ('http', 'file', 'res', 'data'):
             self.temppath = None
-            self.show_popup(url, point)
+            self.show_popup(self.url)
 
-    def show_popup(self, src, point):
+    def show_popup(self, src):
         content = '<html><body><img src="{}"></body></html>'.format(src)
         width, height = self.view.viewport_extent()
         self.view.show_popup(
                 content, 
                 sublime.HIDE_ON_MOUSE_MOVE_AWAY, 
-                point, # location
+                self.point, # location
                 width, # max width
                 height, # max height
                 self.on_navigate,
@@ -59,9 +64,10 @@ class ShowImageUrlOnHover(sublime_plugin.ViewEventListener):
         self.temppath = None
 
 # These are test strings. Uncomment and hover over them to test them.
-# test_large_png = 'http://bellard.org/bpg/3.png'
-# test_large_jpg = 'https://upload.wikimedia.org/wikipedia/commons/8/8c/Chess_Large.JPG'
-# test_large_jpeg = 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Dds40-097_large.jpeg'
+test_large_png = 'http://bellard.org/bpg/3.png'
+test_large_jpg = 'https://upload.wikimedia.org/wikipedia/commons/8/8c/Chess_Large.JPG'
+test_large_jpeg = 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Dds40-097_large.jpeg'
+test_animated_gif = 'http://netdna.webdesignerdepot.com/uploads/2013/07/icons-animation.gif'
 
 
 
